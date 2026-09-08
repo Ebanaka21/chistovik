@@ -65,6 +65,15 @@ prometheus = "0.13"
 lazy_static = "1.4"
 num_cpus = "1.16"
 
+# Image processing (for forensic watermark)
+image = "0.25"
+
+# Random (for jitter in retry)
+rand = "0.8"
+
+# Regex (for anti-spam)
+regex = "1.10"
+
 [profile.release]
 opt-level = 3
 lto = true
