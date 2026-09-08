@@ -13,6 +13,9 @@ mod errors;
 
 use config::Config;
 
+#[cfg(test)]
+mod tests;
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenv().ok();
@@ -43,7 +46,8 @@ async fn main() -> std::io::Result<()> {
     let pool_data = web::Data::new(pool.clone());
     let redis_data = web::Data::new(redis_client);
 
-    HttpServer::new(move || {
+    // FIX: Graceful shutdown через tokio signal
+    let server = HttpServer::new(move || {
         let cors = Cors::default()
             .allowed_origin(&config.cors_origin)
             .allowed_methods(vec!["GET", "POST", "PUT", "PATCH", "DELETE"])
@@ -54,6 +58,8 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .wrap(middleware::Logger::default())
             .wrap(middleware::Compress::default())
+            // FIX: Security headers middleware
+            .wrap(app_middleware::security::SecurityHeaders)
             .app_data(config_data.clone())
             .app_data(pool_data.clone())
             .app_data(redis_data.clone())
@@ -75,6 +81,22 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::streaming::configure)
     })
     .bind(format!("{}:{}", config.host, config.port))?
-    .run()
-    .await
+    .run();
+
+    // FIX: Graceful shutdown
+    log::info!("Server started. Press Ctrl+C to stop.");
+    
+    tokio::select! {
+        result = server => {
+            if let Err(e) = result {
+                log::error!("Server error: {}", e);
+            }
+        }
+        _ = tokio::signal::ctrl_c() => {
+            log::info!("Received Ctrl+C, shutting down gracefully...");
+        }
+    }
+
+    log::info!("Server stopped.");
+    Ok(())
 }

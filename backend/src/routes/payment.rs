@@ -202,10 +202,28 @@ async fn remove_payment_method(
 async fn yookassa_webhook(
     pool: web::Data<PgPool>,
     config: web::Data<Config>,
-    body: web::Json<PaymentWebhook>,
+    req: actix_web::HttpRequest,
+    body: web::Bytes,
 ) -> Result<HttpResponse, AppError> {
-    // Верификация webhook (проверка подписи)
-    // В реальном коде — проверка HMAC подписи от ЮKassa
+    // FIX: HMAC-верификация webhook от ЮKassa
+    let signature = req.headers()
+        .get("X-Yoo-Signature")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::AuthError("Missing webhook signature".to_string()))?;
+
+    let body_str = std::str::from_utf8(&body)
+        .map_err(|e| AppError::ValidationError(format!("Invalid UTF-8: {}", e)))?;
+
+    payment_service::verify_yookassa_webhook(
+        body_str,
+        signature,
+        &config.yookassa_webhook_secret,
+    )?;
+
+    let webhook: payment_service::YookassaWebhook = serde_json::from_str(body_str)
+        .map_err(|e| AppError::ValidationError(format!("Invalid webhook payload: {}", e)))?;
+
+    let body = webhook;
 
     match body.event.as_str() {
         "payment.succeeded" => {

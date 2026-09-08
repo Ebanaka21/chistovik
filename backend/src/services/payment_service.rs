@@ -1,8 +1,12 @@
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::config::Config;
 use crate::errors::AppError;
+
+type HmacSha256 = Hmac<Sha256>;
 
 /// Ответ от ЮKassa при создании платежа
 #[derive(Debug, Deserialize)]
@@ -25,6 +29,60 @@ pub struct YookassaAmount {
 pub struct YookassaConfirmation {
     pub r#type: String,
     pub confirmation_url: String,
+}
+
+/// FIX: Webhook от ЮKassa с HMAC-верификацией
+#[derive(Debug, Deserialize)]
+pub struct YookassaWebhook {
+    pub event: String,
+    pub r#type: String,
+    pub object: YookassaWebhookObject,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct YookassaWebhookObject {
+    pub id: String,
+    pub status: String,
+    pub amount: YookassaAmount,
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// FIX: HMAC-верификация webhook от ЮKassa
+/// ЮKassa отправляет webhook с заголовком X-Yoo-Signature
+pub fn verify_yookassa_webhook(
+    body: &str,
+    signature: &str,
+    webhook_secret: &str,
+) -> Result<(), AppError> {
+    let mut mac = HmacSha256::new_from_slice(webhook_secret.as_bytes())
+        .map_err(|e| AppError::InternalError(format!("HMAC error: {}", e)))?;
+
+    mac.update(body.as_bytes());
+
+    let expected_signature = mac.finalize().into_bytes();
+    let expected_hex = hex::encode(expected_signature);
+
+    // Сравнение с constant-time для защиты от timing attacks
+    if !constant_time_eq(signature.as_bytes(), expected_hex.as_bytes()) {
+        log::warn!("Webhook signature mismatch");
+        return Err(AppError::AuthError("Invalid webhook signature".to_string()));
+    }
+
+    Ok(())
+}
+
+/// Constant-time comparison для защиты от timing attacks
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+
+    let mut result = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        result |= x ^ y;
+    }
+
+    result == 0
 }
 
 /// Запрос к ЮKassa для создания платежа
