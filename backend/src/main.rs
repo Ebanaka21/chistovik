@@ -92,12 +92,18 @@ async fn main() -> std::io::Result<()> {
             .app_data(redis_data.clone())
             // Health check routes
             .configure(routes::health::configure)
-            // Public routes
-            .configure(routes::auth::configure)
-            .configure(routes::showcase::configure)
-            // Protected routes
+            // Public routes с rate limiting по IP (fail-open)
+            .service(
+                web::scope("")
+                    .wrap(app_middleware::rate_limit::presets::api_default())
+                    .configure(routes::auth::configure)
+                    .configure(routes::showcase::configure)
+            )
+            // Protected routes: Auth → RateLimiter → handlers
+            // RateLimiter внутри AuthMiddleware для ключевания по user_id
             .service(
                 web::scope("/api/v1")
+                    .wrap(app_middleware::rate_limit::presets::api_default())
                     .wrap(app_middleware::auth::AuthMiddleware)
                     .configure(routes::author::configure)
                     .configure(routes::content::configure)
