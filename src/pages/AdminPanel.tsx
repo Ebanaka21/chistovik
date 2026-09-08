@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Music, Users, DollarSign, FileText, Shield, AlertTriangle, CheckCircle, XCircle, Eye, Ban, Search } from 'lucide-react';
 
@@ -7,7 +7,7 @@ type Tab = 'overview' | 'users' | 'authors' | 'transactions' | 'moderation' | 's
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  const tabs: { id: Tab; label: string; icon: ReactNode }[] = [
     { id: 'overview', label: 'Обзор', icon: <Shield className="w-4 h-4" /> },
     { id: 'users', label: 'Пользователи', icon: <Users className="w-4 h-4" /> },
     { id: 'authors', label: 'Авторы', icon: <Music className="w-4 h-4" /> },

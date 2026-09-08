@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Music, Upload, BarChart3, Settings, DollarSign, Users, Eye, TrendingUp, Plus, Edit, Trash2, ExternalLink, LogOut, LayoutDashboard, FileAudio, FileVideo } from 'lucide-react';
 
@@ -23,7 +23,7 @@ export default function AuthorDashboard() {
     { id: 5, title: 'Live Session', type: 'video', format: 'MOV', plays: 0, status: 'draft' },
   ];
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  const tabs: { id: Tab; label: string; icon: ReactNode }[] = [
     { id: 'overview', label: 'Обзор', icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: 'content', label: 'Контент', icon: <FileAudio className="w-4 h-4" /> },
     { id: 'pricing', label: 'Тарифы', icon: <DollarSign className="w-4 h-4" /> },

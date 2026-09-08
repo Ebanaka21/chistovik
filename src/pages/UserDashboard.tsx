@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Music, Play, Pause, Heart, CreditCard, BookOpen, User, Settings, LogOut, Bell, Shield } from 'lucide-react';
 
@@ -33,7 +33,7 @@ export default function UserDashboard() {
     { id: '5', date: '10.12.2025', author: 'Мария Светлова', amount: 249, method: 'СБП', status: 'Оплачено' },
   ];
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  const tabs: { id: Tab; label: string; icon: ReactNode }[] = [
     { id: 'library', label: 'Моя библиотека', icon: <BookOpen className="w-4 h-4" /> },
     { id: 'subscriptions', label: 'Подписки', icon: <Heart className="w-4 h-4" /> },
     { id: 'payments', label: 'Платежи', icon: <CreditCard className="w-4 h-4" /> },
