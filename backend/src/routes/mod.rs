@@ -7,3 +7,4 @@ pub mod payment;
 pub mod user;
 pub mod admin;
 pub mod streaming;
+pub mod health;

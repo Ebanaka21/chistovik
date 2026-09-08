@@ -54,6 +54,17 @@ futures = "0.3"
 # Environment variables
 dotenv = "0.15"
 
+# Telemetry
+opentelemetry = { version = "0.22", features = ["trace", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.15", features = ["tonic", "trace"] }
+opentelemetry_sdk = { version = "0.22", features = ["rt-tokio"] }
+tracing = "0.1"
+tracing-opentelemetry = "0.23"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+prometheus = "0.13"
+lazy_static = "1.4"
+num_cpus = "1.16"
+
 [profile.release]
 opt-level = 3
 lto = true
