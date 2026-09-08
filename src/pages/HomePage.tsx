@@ -1,241 +1,273 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Music, Video, Shield, Zap, Menu, X } from 'lucide-react';
+import { ArrowRight, Lock, Disc3, Radio } from 'lucide-react';
 
 export default function HomePage() {
-  const [menuOpen, setMenuOpen] = useState(false);
-
   return (
-    <div className="min-h-screen bg-dark">
-      {/* Header */}
-      <header className="fixed top-0 w-full z-50 glass-card border-b border-dark-border">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Music className="w-5 h-5 text-white" />
+    <div className="min-h-screen bg-ink text-paper">
+      {/* Nav */}
+      <nav className="fixed top-0 w-full z-50 border-b border-ink-border bg-ink/80 backdrop-blur-sm">
+        <div className="max-w-[1400px] mx-auto px-6 h-16 flex items-center justify-between">
+          <Link to="/" className="flex items-center gap-2.5">
+            <div className="w-7 h-7 border border-copper flex items-center justify-center">
+              <div className="w-2 h-2 bg-copper" />
             </div>
-            <span className="text-xl font-bold gradient-text">Чистовик</span>
+            <span className="font-display font-semibold text-lg tracking-tight">ЧИСТОВИК</span>
           </Link>
-          <nav className="hidden md:flex items-center gap-6">
-            <a href="#features" className="text-gray-300 hover:text-white transition">Возможности</a>
-            <a href="#pricing" className="text-gray-300 hover:text-white transition">Тарифы</a>
-            <a href="#authors" className="text-gray-300 hover:text-white transition">Авторы</a>
-            <Link to="/login" className="px-4 py-2 rounded-lg bg-primary hover:bg-primary-dark text-white transition">
-              Войти
-            </Link>
-          </nav>
-          <button className="md:hidden text-white" onClick={() => setMenuOpen(!menuOpen)}>
-            {menuOpen ? <X /> : <Menu />}
-          </button>
+          <div className="hidden md:flex items-center gap-8 text-sm text-paper-muted">
+            <a href="#manifest" className="link-copper">Манифест</a>
+            <a href="#how" className="link-copper">Как это работает</a>
+            <a href="#authors" className="link-copper">Авторы</a>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link to="/login" className="text-sm text-paper-muted hover:text-paper transition">Войти</Link>
+            <Link to="/login" className="btn-primary px-4 py-2 text-sm rounded">Начать</Link>
+          </div>
         </div>
-        {menuOpen && (
-          <div className="md:hidden px-4 pb-4 flex flex-col gap-3">
-            <a href="#features" className="text-gray-300">Возможности</a>
-            <a href="#pricing" className="text-gray-300">Тарифы</a>
-            <a href="#authors" className="text-gray-300">Авторы</a>
-            <Link to="/login" className="px-4 py-2 rounded-lg bg-primary text-white text-center">Войти</Link>
-          </div>
-        )}
-      </header>
+      </nav>
 
-      {/* Hero Section */}
-      <section className="pt-32 pb-20 px-4 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
-        <div className="absolute top-20 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl" />
-        <div className="absolute top-40 right-1/4 w-72 h-72 bg-accent/10 rounded-full blur-3xl" />
-        
-        <div className="max-w-5xl mx-auto text-center relative z-10">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-card mb-8">
-            <Zap className="w-4 h-4 text-accent" />
-            <span className="text-sm text-gray-300">Lossless качество • Защита контента • Модульные подписки</span>
+      {/* Hero */}
+      <section className="relative pt-32 pb-24 px-6 overflow-hidden noise">
+        <div className="absolute inset-0 grid-bg opacity-40 fade-mask" />
+        <div className="max-w-[1400px] mx-auto relative">
+          <div className="max-w-4xl">
+            <div className="flex items-center gap-2 mb-8">
+              <div className="w-1.5 h-1.5 rounded-full bg-copper animate-pulse" />
+              <span className="font-mono text-xs text-paper-muted uppercase tracking-wider">v1.0 · Закрытая платформа</span>
+            </div>
+            <h1 className="font-display text-6xl md:text-8xl font-semibold leading-[0.9] tracking-tighter mb-8">
+              Контент<br />
+              <span className="text-copper">без компромиссов.</span>
+            </h1>
+            <p className="text-xl md:text-2xl text-paper-muted max-w-2xl leading-relaxed mb-12">
+              Платформа для авторов, которые не готовы снижать качество. Lossless-аудио, защищённое видео, прямые подписки — без посредников и алгоритмов.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <Link to="/login" className="btn-primary px-8 py-4 rounded inline-flex items-center justify-center gap-2 text-base">
+                Создать витрину <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link to="/aleksei-morozov" className="btn-ghost px-8 py-4 rounded inline-flex items-center justify-center gap-2 text-base">
+                Посмотреть пример
+              </Link>
+            </div>
           </div>
-          
-          <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
-            Монетизируй свой контент
-            <br />
-            <span className="gradient-text">без посредников</span>
-          </h1>
-          
-          <p className="text-xl text-gray-400 mb-10 max-w-3xl mx-auto">
-            Создай витрину для продажи эксклюзивной музыки и видео по подписке. 
-            Lossless аудио, защищённое видео, гибкие тарифы — всё в одном месте.
-          </p>
-          
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/author/dashboard" className="px-8 py-4 rounded-xl bg-primary hover:bg-primary-dark text-white font-semibold text-lg transition glow-purple">
-              Стать автором
-            </Link>
-            <Link to="/aleksei-morozov" className="px-8 py-4 rounded-xl glass-card hover:border-primary-light text-white font-semibold text-lg transition">
-              Смотреть витрину
-            </Link>
+
+          {/* Stats strip */}
+          <div className="mt-24 grid grid-cols-2 md:grid-cols-4 gap-px bg-ink-border border border-ink-border">
+            {[
+              { label: 'Lossless', value: 'FLAC · WAV', sub: 'Без потерь' },
+              { label: 'Защита', value: 'HLS + DRM', sub: 'AES-128' },
+              { label: 'Комиссия', value: '8%', sub: 'Прозрачно' },
+              { label: 'Выплаты', value: 'T+7', sub: 'На счёт' },
+            ].map((stat, i) => (
+              <div key={i} className="bg-ink p-6">
+                <div className="font-mono text-xs text-paper-dim uppercase tracking-wider mb-2">{stat.label}</div>
+                <div className="font-display text-2xl font-semibold mb-1">{stat.value}</div>
+                <div className="text-sm text-paper-muted">{stat.sub}</div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section id="features" className="py-20 px-4">
-        <div className="max-w-7xl mx-auto">
-          <h2 className="text-4xl font-bold text-center mb-4">Всё для авторов контента</h2>
-          <p className="text-gray-400 text-center mb-16 text-lg">Инструменты, которые помогают зарабатывать на творчестве</p>
-          
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="glass-card rounded-2xl p-8 hover:border-primary-light transition">
-              <div className="w-14 h-14 rounded-xl bg-primary/20 flex items-center justify-center mb-6">
-                <Music className="w-7 h-7 text-primary-light" />
-              </div>
-              <h3 className="text-xl font-bold mb-3">Lossless Аудио</h3>
-              <p className="text-gray-400">
-                FLAC, WAV, MP3 320 — ваши треки в максимальном качестве. 
-                Тизеры 15 секунд для привлечения подписчиков.
-              </p>
+      {/* Manifest */}
+      <section id="manifest" className="py-32 px-6 border-t border-ink-border">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="grid md:grid-cols-12 gap-12">
+            <div className="md:col-span-4">
+              <div className="font-mono text-xs text-copper uppercase tracking-wider mb-4">01 — Манифест</div>
+              <h2 className="font-display text-4xl md:text-5xl font-semibold leading-tight tracking-tight">
+                Мы верим в качество.
+              </h2>
             </div>
-            
-            <div className="glass-card rounded-2xl p-8 hover:border-primary-light transition">
-              <div className="w-14 h-14 rounded-xl bg-accent/20 flex items-center justify-center mb-6">
-                <Video className="w-7 h-7 text-accent" />
-              </div>
-              <h3 className="text-xl font-bold mb-3">Защищённое видео</h3>
-              <p className="text-gray-400">
-                HLS-стриминг с шифрованием, водяные знаки, защита от скачивания. 
-                Тизеры до 60 секунд.
+            <div className="md:col-span-7 md:col-start-6 space-y-6 text-lg text-paper-muted leading-relaxed">
+              <p>
+                Стриминги сжали музыку до 256 kbps. Алгоритмы решают, что вы слушаете. Пиратство убивает независимых артистов.
               </p>
-            </div>
-            
-            <div className="glass-card rounded-2xl p-8 hover:border-primary-light transition">
-              <div className="w-14 h-14 rounded-xl bg-green-500/20 flex items-center justify-center mb-6">
-                <Shield className="w-7 h-7 text-green-400" />
-              </div>
-              <h3 className="text-xl font-bold mb-3">DRM-защита</h3>
-              <p className="text-gray-400">
-                Токены доступа, ограничение сессий, rate limiting. 
-                Ваш контент под надёжной защитой.
+              <p>
+                <span className="text-paper">Чистовик</span> — это альтернатива. Платформа, где автор контролирует всё: от качества мастеринга до цены подписки. Где слушатель получает настоящий Lossless, а не "потеряшку".
+              </p>
+              <p>
+                Мы не гонимся за охватом. Мы делаем инструмент для тех, кому важно <span className="text-copper">каждое децибел</span>.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section id="pricing" className="py-20 px-4">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-4xl font-bold text-center mb-4">Модульные подписки</h2>
-          <p className="text-gray-400 text-center mb-16 text-lg">Автор сам решает, что продавать и по какой цене</p>
-          
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="glass-card rounded-2xl p-8 text-center">
-              <div className="text-3xl mb-4">🎵</div>
-              <h3 className="text-xl font-bold mb-2">Музыка</h3>
-              <p className="text-gray-400 mb-4">Доступ к закрытым трекам в Lossless</p>
-              <div className="text-3xl font-bold text-primary-light mb-6">от 149 ₽<span className="text-sm text-gray-400">/мес</span></div>
-              <ul className="text-left text-gray-300 space-y-2 mb-6">
-                <li className="flex items-center gap-2">✓ FLAC / WAV / MP3 320</li>
-                <li className="flex items-center gap-2">✓ Тизеры 15 сек</li>
-                <li className="flex items-center gap-2">✓ Потоковое воспроизведение</li>
-              </ul>
-            </div>
-            
-            <div className="glass-card rounded-2xl p-8 text-center border-primary-light glow-purple relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-primary rounded-full text-xs font-bold">Популярный</div>
-              <div className="text-3xl mb-4">🎬</div>
-              <h3 className="text-xl font-bold mb-2">Видео</h3>
-              <p className="text-gray-400 mb-4">Эксклюзивные видео в HD/4K</p>
-              <div className="text-3xl font-bold text-accent mb-6">от 199 ₽<span className="text-sm text-gray-400">/мес</span></div>
-              <ul className="text-left text-gray-300 space-y-2 mb-6">
-                <li className="flex items-center gap-2">✓ HLS-стриминг</li>
-                <li className="flex items-center gap-2">✓ Тизеры 60 сек</li>
-                <li className="flex items-center gap-2">✓ Водяные знаки</li>
-              </ul>
-            </div>
-            
-            <div className="glass-card rounded-2xl p-8 text-center">
-              <div className="text-3xl mb-4">🎁</div>
-              <h3 className="text-xl font-bold mb-2">Комбо</h3>
-              <p className="text-gray-400 mb-4">Музыка + Видео со скидкой</p>
-              <div className="text-3xl font-bold text-green-400 mb-6">от 299 ₽<span className="text-sm text-gray-400">/мес</span></div>
-              <ul className="text-left text-gray-300 space-y-2 mb-6">
-                <li className="flex items-center gap-2">✓ Всё из «Музыка»</li>
-                <li className="flex items-center gap-2">✓ Всё из «Видео»</li>
-                <li className="flex items-center gap-2">✓ Экономия до 15%</li>
-              </ul>
-            </div>
+      {/* How it works */}
+      <section id="how" className="py-32 px-6 border-t border-ink-border bg-ink-elevated">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="font-mono text-xs text-copper uppercase tracking-wider mb-4">02 — Как это работает</div>
+          <h2 className="font-display text-4xl md:text-5xl font-semibold leading-tight tracking-tight mb-16 max-w-2xl">
+            Три шага до первого рубля.
+          </h2>
+
+          <div className="grid md:grid-cols-3 gap-px bg-ink-border border border-ink-border">
+            {[
+              {
+                num: '01',
+                icon: <Disc3 className="w-5 h-5" />,
+                title: 'Загрузите',
+                desc: 'FLAC, WAV, MP4. Нарезайте тизеры — 15 сек аудио, 60 сек видео. Контент шифруется и уходит в защищённое хранилище.',
+              },
+              {
+                num: '02',
+                icon: <Lock className="w-5 h-5" />,
+                title: 'Защитите',
+                desc: 'HLS-стриминг с AES-128. Водяные знаки с ID пользователя. Лимит сессий. Токены живут 2 часа.',
+              },
+              {
+                num: '03',
+                icon: <Radio className="w-5 h-5" />,
+                title: 'Монетизируйте',
+                desc: 'Модульные подписки: музыка, видео, комбо. Автопродление через ЮKassa. Выплаты на счёт каждые 7 дней.',
+              },
+            ].map((step, i) => (
+              <div key={i} className="bg-ink-elevated p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <span className="font-mono text-sm text-paper-dim">{step.num}</span>
+                  <div className="w-8 h-8 border border-ink-border-strong flex items-center justify-center text-copper">
+                    {step.icon}
+                  </div>
+                </div>
+                <h3 className="font-display text-2xl font-semibold mb-3">{step.title}</h3>
+                <p className="text-paper-muted leading-relaxed">{step.desc}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Authors Preview */}
-      <section id="authors" className="py-20 px-4">
-        <div className="max-w-7xl mx-auto">
-          <h2 className="text-4xl font-bold text-center mb-16">Авторы на платформе</h2>
+      {/* Features grid */}
+      <section className="py-32 px-6 border-t border-ink-border">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="font-mono text-xs text-copper uppercase tracking-wider mb-4">03 — Возможности</div>
+          <h2 className="font-display text-4xl md:text-5xl font-semibold leading-tight tracking-tight mb-16 max-w-2xl">
+            Всё, что нужно автору.
+          </h2>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {[
+              {
+                title: 'Lossless-аудио',
+                items: ['FLAC, WAV, MP3 320', 'Потоковое воспроизведение', 'Метаданные и обложки', 'Альбомы и синглы'],
+              },
+              {
+                title: 'Защищённое видео',
+                items: ['HLS с шифрованием', 'Адаптивное качество (360p–4K)', 'Водяные знаки в реальном времени', 'Запрет скачивания'],
+              },
+              {
+                title: 'Модульные подписки',
+                items: ['Музыка / Видео / Комбо', 'Месяц / квартал / год', 'Пропорциональный перерасчёт', 'Заморозка до 3 месяцев'],
+              },
+              {
+                title: 'Аналитика и выплаты',
+                items: ['Дашборд в реальном времени', 'Конверсия тизер → подписка', 'Выплаты на р/с или карту', 'Прозрачная комиссия 8%'],
+              },
+            ].map((feature, i) => (
+              <div key={i} className="surface p-8">
+                <h3 className="font-display text-xl font-semibold mb-5">{feature.title}</h3>
+                <ul className="space-y-3">
+                  {feature.items.map((item, j) => (
+                    <li key={j} className="flex items-start gap-3 text-paper-muted">
+                      <div className="w-1 h-1 rounded-full bg-copper mt-2 flex-shrink-0" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Authors */}
+      <section id="authors" className="py-32 px-6 border-t border-ink-border bg-ink-elevated">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="font-mono text-xs text-copper uppercase tracking-wider mb-4">04 — Авторы</div>
+          <h2 className="font-display text-4xl md:text-5xl font-semibold leading-tight tracking-tight mb-16 max-w-2xl">
+            Платформа растёт.
+          </h2>
+
           <div className="grid md:grid-cols-4 gap-6">
             {[
-              { name: 'Алексей Морозов', type: 'Электронная музыка', avatar: '🎹' },
-              { name: 'Мария Светлова', type: 'Видео-арт', avatar: '🎨' },
-              { name: 'Дмитрий Волков', type: 'Инди-рок', avatar: '🎸' },
-              { name: 'Анна Козлова', type: 'Мастер-классы', avatar: '📚' },
+              { name: 'Алексей Морозов', type: 'Электронная музыка', subs: '1.2K', avatar: 'AM' },
+              { name: 'Мария Светлова', type: 'Видео-арт', subs: '892', avatar: 'МС' },
+              { name: 'Дмитрий Волков', type: 'Инди-рок', subs: '2.1K', avatar: 'ДВ' },
+              { name: 'Анна Козлова', type: 'Мастер-классы', subs: '567', avatar: 'АК' },
             ].map((author, i) => (
-              <Link to="/aleksei-morozov" key={i} className="glass-card rounded-2xl p-6 text-center hover:border-primary-light transition cursor-pointer">
-                <div className="text-5xl mb-4">{author.avatar}</div>
-                <h3 className="font-bold mb-1">{author.name}</h3>
-                <p className="text-sm text-gray-400">{author.type}</p>
+              <Link to="/aleksei-morozov" key={i} className="surface p-6 group cursor-pointer">
+                <div className="w-12 h-12 rounded-full bg-ink border border-ink-border-strong flex items-center justify-center font-mono text-sm text-copper mb-4">
+                  {author.avatar}
+                </div>
+                <h3 className="font-display text-lg font-semibold mb-1 group-hover:text-copper transition">{author.name}</h3>
+                <p className="text-sm text-paper-muted mb-3">{author.type}</p>
+                <div className="font-mono text-xs text-paper-dim">{author.subs} подписчиков</div>
               </Link>
             ))}
           </div>
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="py-20 px-4">
-        <div className="max-w-4xl mx-auto glass-card rounded-3xl p-12 text-center relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-accent/20" />
-          <div className="relative z-10">
-            <h2 className="text-4xl font-bold mb-4">Готовы начать?</h2>
-            <p className="text-gray-300 mb-8 text-lg">Создайте витрину за 5 минут и начните зарабатывать на своём контенте</p>
-            <Link to="/login" className="inline-block px-8 py-4 rounded-xl bg-primary hover:bg-primary-dark text-white font-semibold text-lg transition glow-purple">
-              Создать витрину бесплатно
-            </Link>
-          </div>
+      {/* CTA */}
+      <section className="py-32 px-6 border-t border-ink-border">
+        <div className="max-w-[1400px] mx-auto text-center">
+          <h2 className="font-display text-5xl md:text-7xl font-semibold leading-[0.9] tracking-tighter mb-8">
+            Готовы к<br />
+            <span className="text-copper">чистовику?</span>
+          </h2>
+          <p className="text-xl text-paper-muted mb-12 max-w-2xl mx-auto">
+            Создайте витрину за 5 минут. Без ежемесячной платы — только комиссия с продаж.
+          </p>
+          <Link to="/login" className="btn-primary px-10 py-5 rounded inline-flex items-center gap-2 text-lg">
+            Начать бесплатно <ArrowRight className="w-5 h-5" />
+          </Link>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-dark-border py-12 px-4">
-        <div className="max-w-7xl mx-auto grid md:grid-cols-4 gap-8">
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                <Music className="w-5 h-5 text-white" />
+      <footer className="border-t border-ink-border py-12 px-6">
+        <div className="max-w-[1400px] mx-auto">
+          <div className="grid md:grid-cols-4 gap-8 mb-12">
+            <div>
+              <div className="flex items-center gap-2.5 mb-4">
+                <div className="w-7 h-7 border border-copper flex items-center justify-center">
+                  <div className="w-2 h-2 bg-copper" />
+                </div>
+                <span className="font-display font-semibold">ЧИСТОВИК</span>
               </div>
-              <span className="text-xl font-bold">Чистовик</span>
+              <p className="text-sm text-paper-muted">Платформа закрытого контента для авторов и их аудитории.</p>
             </div>
-            <p className="text-gray-400 text-sm">Платформа закрытого контента для авторов и их аудитории</p>
+            <div>
+              <div className="font-mono text-xs text-paper-dim uppercase tracking-wider mb-4">Платформа</div>
+              <ul className="space-y-2 text-sm">
+                <li><a href="#" className="text-paper-muted hover:text-paper transition">О нас</a></li>
+                <li><a href="#" className="text-paper-muted hover:text-paper transition">Блог</a></li>
+                <li><a href="#" className="text-paper-muted hover:text-paper transition">Контакты</a></li>
+              </ul>
+            </div>
+            <div>
+              <div className="font-mono text-xs text-paper-dim uppercase tracking-wider mb-4">Авторам</div>
+              <ul className="space-y-2 text-sm">
+                <li><a href="#" className="text-paper-muted hover:text-paper transition">Как начать</a></li>
+                <li><a href="#" className="text-paper-muted hover:text-paper transition">Тарифы</a></li>
+                <li><a href="#" className="text-paper-muted hover:text-paper transition">FAQ</a></li>
+              </ul>
+            </div>
+            <div>
+              <div className="font-mono text-xs text-paper-dim uppercase tracking-wider mb-4">Правовое</div>
+              <ul className="space-y-2 text-sm">
+                <li><a href="#" className="text-paper-muted hover:text-paper transition">Оферта</a></li>
+                <li><a href="#" className="text-paper-muted hover:text-paper transition">Конфиденциальность</a></li>
+                <li><a href="#" className="text-paper-muted hover:text-paper transition">152-ФЗ</a></li>
+              </ul>
+            </div>
           </div>
-          <div>
-            <h4 className="font-bold mb-3">Платформа</h4>
-            <ul className="space-y-2 text-gray-400 text-sm">
-              <li><a href="#" className="hover:text-white transition">О нас</a></li>
-              <li><a href="#" className="hover:text-white transition">Блог</a></li>
-              <li><a href="#" className="hover:text-white transition">Контакты</a></li>
-            </ul>
+          <div className="divider mb-6" />
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-paper-dim">
+            <div>© 2026 Чистовик. Все права защищены.</div>
+            <div className="font-mono">Сделано в России · v1.0.0</div>
           </div>
-          <div>
-            <h4 className="font-bold mb-3">Авторам</h4>
-            <ul className="space-y-2 text-gray-400 text-sm">
-              <li><a href="#" className="hover:text-white transition">Как начать</a></li>
-              <li><a href="#" className="hover:text-white transition">Тарифы</a></li>
-              <li><a href="#" className="hover:text-white transition">FAQ</a></li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="font-bold mb-3">Правовая информация</h4>
-            <ul className="space-y-2 text-gray-400 text-sm">
-              <li><a href="#" className="hover:text-white transition">Оферта</a></li>
-              <li><a href="#" className="hover:text-white transition">Политика конфиденциальности</a></li>
-              <li><a href="#" className="hover:text-white transition">152-ФЗ</a></li>
-            </ul>
-          </div>
-        </div>
-        <div className="max-w-7xl mx-auto mt-8 pt-8 border-t border-dark-border text-center text-gray-500 text-sm">
-          © 2026 Чистовик. Все права защищены.
         </div>
       </footer>
     </div>

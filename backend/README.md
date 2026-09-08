@@ -10,17 +10,51 @@ Backend для платформы закрытого контента «Чист
 - **Кэш / Rate limiting:** Redis
 - **Хранилище файлов:** S3-совместимое (Yandex Cloud / Selectel)
 - **Платежи:** ЮKassa
-- **Аутентификация:** JWT
-- **Медиа:** FFmpeg (HLS, транскодирование)
+- **Аутентификация:** JWT + Refresh Token Rotation
+- **Медиа:** FFmpeg (HLS, транскодирование, водяные знаки)
+
+## Безопасность
+
+### Аутентификация
+- JWT с валидацией expiration
+- Refresh Token Rotation (каждый refresh отзывет старый)
+- SHA-256 для хэширования токенов (не DefaultHasher!)
+- Account lockout после N неудачных попыток
+- Валидация политики паролей
+
+### Защита API
+- Security Headers: CSP, X-Frame-Options, HSTS, X-Content-Type-Options
+- CORS с валидацией origin
+- Rate limiting через Redis (Lua script для атомарности)
+- Constant-time comparison для HMAC (защита от timing attacks)
+
+### Защита платежей
+- HMAC-SHA256 верификация webhook от ЮKassa
+- Idempotency key для предотвращения дублей
+- Audit log всех финансовых операций
+
+### Защита медиа
+- HLS с AES-128 шифрованием
+- Временные токены доступа (2 часа)
+- Водяные знаки через FFmpeg (user_id + display_name)
+- Rate limiting на стриминг (30 запросов/мин)
+- Проверка Referer (защита от хотлинкинга)
+- Реальное S3-хранилище через rust-s3
+
+### Аудит
+- Audit log всех критичных действий
+- Запись failed login attempts
+- Отслеживание сессий
 
 ## Структура проекта
 
 ```
 backend/
 ├── src/
-│   ├── main.rs              # Точка входа, настройка сервера
+│   ├── main.rs              # Точка входа + graceful shutdown
 │   ├── config.rs             # Конфигурация из env
 │   ├── errors.rs             # Обработка ошибок
+│   ├── tests.rs              # Unit tests
 │   ├── models/               # Модели данных
 │   │   ├── user.rs           # Пользователи, JWT
 │   │   ├── author.rs         # Авторы, тарифы, выплаты
@@ -34,24 +68,64 @@ backend/
 │   │   ├── author.rs         # ЛК автора
 │   │   ├── content.rs        # Управление контентом
 │   │   ├── subscription.rs   # Подписки
-│   │   ├── payment.rs        # Платежи, вебхуки
+│   │   ├── payment.rs        # Платежи, webhook с HMAC
 │   │   ├── user.rs           # ЛК пользователя
 │   │   ├── admin.rs          # Админ-панель
-│   │   └── streaming.rs      # HLS-стриминг
+│   │   └── streaming.rs      # HLS-стриминг с водяными знаками
 │   ├── middleware/            # Middleware
 │   │   ├── auth.rs           # JWT-аутентификация
-│   │   └── rate_limit.rs     # Rate limiting
+│   │   ├── rate_limit.rs     # Rate limiting (Redis)
+│   │   └── security.rs       # Security headers (CSP, HSTS)
 │   └── services/             # Бизнес-логика
-│       ├── auth_service.rs   # JWT, сессии
+│       ├── auth_service.rs   # JWT, SHA-256, password policy
 │       ├── content_service.rs # FFmpeg, транскодирование
-│       ├── payment_service.rs # ЮKassa, рекурренты
-│       └── streaming_service.rs # HLS, токены, водяные знаки
+│       ├── payment_service.rs # ЮKassa, HMAC webhook
+│       └── streaming_service.rs # HLS, S3, водяные знаки
 ├── migrations/
-│   └── 001_init.sql          # Схема БД
+│   ├── 001_init.sql          # Схема БД
+│   └── 002_security.sql      # Audit logs, account lockout
 ├── Cargo.toml
 ├── .env.example
 └── README.md
 ```
+
+## Запуск
+
+```bash
+# 1. Установить зависимости
+cargo build
+
+# 2. Настроить .env
+cp .env.example .env
+# Заполнить .env (особенно секреты!)
+
+# 3. Запустить PostgreSQL и Redis
+docker-compose up -d postgres redis
+
+# 4. Запустить сервер
+cargo run
+
+# 5. Запустить тесты
+cargo test
+```
+
+## Переменные окружения
+
+### Критичные (обязательны)
+- `DATABASE_URL` — подключение к PostgreSQL
+- `JWT_SECRET` — секрет для JWT (мин. 32 символа)
+- `MEDIA_TOKEN_SECRET` — секрет для медиа-токенов (НЕ хардкод!)
+- `YOOKASSA_WEBHOOK_SECRET` — HMAC секрет для webhook
+
+### Безопасность
+- `PASSWORD_MIN_LENGTH` — мин. длина пароля (по умолчанию 8)
+- `MAX_LOGIN_ATTEMPTS` — макс. попыток до блокировки (по умолчанию 5)
+- `LOCKOUT_DURATION_MINUTES` — длительность блокировки (по умолчанию 15)
+
+### Rate limiting
+- `RATE_LIMIT_API` — запросов/мин для API (по умолчанию 100)
+- `RATE_LIMIT_AUTH` — запросов/мин для auth (по умолчанию 10)
+- `RATE_LIMIT_MEDIA` — запросов/мин для стриминга (по умолчанию 30)
 
 ## API Endpoints
 
@@ -101,29 +175,27 @@ backend/
 | GET | `/api/v1/admin/transactions` | Транзакции |
 | POST | `/api/v1/admin/payouts/{id}/approve` | Одобрить выплату |
 
-## Запуск
+## Тестирование
 
 ```bash
-# 1. Установить зависимости
-cargo build
+# Unit tests
+cargo test
 
-# 2. Настроить .env
-cp .env.example .env
-# Заполнить .env
+# С покрытием
+cargo tarpaulin
 
-# 3. Запустить PostgreSQL и Redis
-docker-compose up -d postgres redis
-
-# 4. Запустить сервер
-cargo run
+# Integration tests (требует БД)
+cargo test --features integration
 ```
 
-## Защита контента
+## Production Checklist
 
-1. **HLS-стриминг** — видео/аудио разбивается на зашифрованные сегменты
-2. **Токены доступа** — временные JWT для каждого сегмента (2 часа)
-3. **Водяные знаки** — идентификатор пользователя на видео
-4. **Rate limiting** — ограничение частоты запросов
-5. **Ограничение сессий** — максимум 2 устройства
-6. **Защита от хотлинкинга** — проверка Referer
-7. **Тизеры** — отдельные файлы, не содержащие полный контент
+- [ ] Все секреты в env vars (не хардкод!)
+- [ ] HTTPS включён
+- [ ] Rate limiting настроен
+- [ ] Audit logging активен
+- [ ] Backup БД настроен
+- [ ] Мониторинг (Prometheus + Grafana)
+- [ ] Alerting на ошибки
+- [ ] GDPR compliance (удаление данных)
+- [ ] 152-ФЗ compliance (персональные данные)

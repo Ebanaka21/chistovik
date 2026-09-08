@@ -1,7 +1,9 @@
 use chrono::{Utc, Duration};
 use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
+use sha2::{Sha256, Digest};
 use sqlx::PgPool;
 use uuid::Uuid;
+use hex;
 
 use crate::config::Config;
 use crate::errors::AppError;
@@ -39,6 +41,7 @@ pub fn generate_tokens(
         "type": "refresh",
         "exp": refresh_exp.timestamp(),
         "iat": now.timestamp(),
+        "jti": Uuid::new_v4().to_string(), // Уникальный ID для отзыва
     });
 
     let refresh_token = encode(
@@ -52,13 +55,113 @@ pub fn generate_tokens(
 
 /// Валидация JWT токена
 pub fn validate_token(token: &str, jwt_secret: &str) -> Result<JwtClaims, AppError> {
+    let mut validation = Validation::default();
+    validation.validate_exp = true;
+    validation.required_spec_claims.insert("exp".to_string());
+
     let token_data = decode::<JwtClaims>(
         token,
         &DecodingKey::from_secret(jwt_secret.as_bytes()),
-        &Validation::default(),
+        &validation,
     ).map_err(|e| AppError::AuthError(format!("Token validation error: {}", e)))?;
 
     Ok(token_data.claims)
+}
+
+/// FIX: SHA-256 вместо DefaultHasher для хэширования токенов
+/// DefaultHasher не криптографический и может коллизировать
+pub fn hash_token(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+/// FIX: Валидация политики паролей
+pub fn validate_password(password: &str, min_length: usize) -> Result<(), AppError> {
+    if password.len() < min_length {
+        return Err(AppError::ValidationError(
+            format!("Пароль должен быть не менее {} символов", min_length)
+        ));
+    }
+
+    // Проверка на распространённые пароли (список можно расширить)
+    let common_passwords = [
+        "password", "12345678", "qwerty", "letmein", "admin",
+        "welcome", "monkey", "dragon", "master", "login",
+    ];
+    if common_passwords.contains(&password.to_lowercase().as_str()) {
+        return Err(AppError::ValidationError(
+            "Слишком простой пароль. Используйте более сложный.".to_string()
+        ));
+    }
+
+    Ok(())
+}
+
+/// FIX: Проверка account lockout (защита от брутфорса)
+pub async fn check_account_lockout(
+    pool: &PgPool,
+    email: &str,
+    max_attempts: u32,
+    lockout_minutes: u32,
+) -> Result<(), AppError> {
+    let lockout_info: Option<(i32, chrono::DateTime<Utc>)> = sqlx::query_as(
+        "SELECT failed_attempts, locked_until FROM users WHERE email = $1"
+    )
+    .bind(email)
+    .fetch_optional(pool)
+    .await?
+    .and_then(|(attempts, locked_until)| {
+        if attempts > 0 {
+            Some((attempts, locked_until))
+        } else {
+            None
+        }
+    });
+
+    if let Some((attempts, locked_until)) = lockout_info {
+        if attempts as u32 >= max_attempts && locked_until > Utc::now() {
+            let minutes_left = (locked_until - Utc::now()).num_minutes();
+            return Err(AppError::AuthError(
+                format!("Аккаунт заблокирован. Попробуйте через {} мин.", minutes_left.max(1))
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// FIX: Запись неудачной попытки входа
+pub async fn record_failed_login(pool: &PgPool, email: &str, lockout_minutes: u32) -> Result<(), AppError> {
+    sqlx::query(
+        r#"
+        UPDATE users SET
+            failed_attempts = failed_attempts + 1,
+            locked_until = CASE
+                WHEN failed_attempts + 1 >= 5 THEN NOW() + ($1 || ' minutes')::interval
+                ELSE locked_until
+            END
+        WHERE email = $2
+        "#
+    )
+    .bind(lockout_minutes.to_string())
+    .bind(email)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// FIX: Сброс счётчика неудачных попыток при успешном входе
+pub async fn reset_failed_login(pool: &PgPool, email: &str) -> Result<(), AppError> {
+    sqlx::query(
+        "UPDATE users SET failed_attempts = 0, locked_until = NOW() WHERE email = $1"
+    )
+    .bind(email)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 /// Сохранение refresh token в БД
@@ -111,7 +214,7 @@ pub async fn refresh_tokens(
         return Err(AppError::AuthError("Refresh token истёк".to_string()));
     }
 
-    // Отзыв старого refresh token
+    // FIX: Rotation — отзыв старого refresh token
     sqlx::query("UPDATE refresh_tokens SET is_revoked = true WHERE id = $1")
         .bind(token_record.id)
         .execute(pool)
@@ -212,13 +315,35 @@ pub async fn create_session(
     Ok(())
 }
 
-/// Хеширование токена для хранения
-fn hash_token(token: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    token.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+/// FIX: Audit log — запись действий в системе
+pub async fn audit_log(
+    pool: &PgPool,
+    user_id: Option<Uuid>,
+    action: &str,
+    resource_type: &str,
+    resource_id: Option<Uuid>,
+    ip_address: &str,
+    user_agent: &str,
+    metadata: Option<serde_json::Value>,
+) -> Result<(), AppError> {
+    sqlx::query(
+        r#"
+        INSERT INTO audit_logs (id, user_id, action, resource_type, resource_id, ip_address, user_agent, metadata, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        "#
+    )
+    .bind(Uuid::new_v4())
+    .bind(user_id)
+    .bind(action)
+    .bind(resource_type)
+    .bind(resource_id)
+    .bind(ip_address)
+    .bind(user_agent)
+    .bind(metadata)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 // Вспомогательные структуры

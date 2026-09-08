@@ -21,7 +21,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 
 /// POST /stream/token
 /// Получение токена доступа к медиа-контенту
-/// Токен нужен для доступа к HLS-сегментам
 async fn get_media_token(
     pool: web::Data<PgPool>,
     config: web::Data<Config>,
@@ -46,14 +45,13 @@ async fn get_media_token(
         body.content_id,
     ).await?;
 
-    let is_full_access = has_access;
-
-    // Генерация временного токена для доступа к сегментам
+    // FIX: Генерация токена с секретом из config (не хардкод!)
     let media_token = streaming_service::generate_media_token(
         user_id,
         body.content_id,
-        is_full_access,
+        has_access,
         config.token_expiration_minutes,
+        &config.media_token_secret,
     )?;
 
     // Запись события воспроизведения
@@ -70,20 +68,31 @@ async fn get_media_token(
     .bind(Uuid::new_v4())
     .bind(user_id)
     .bind(body.content_id)
-    .bind(!is_full_access)
+    .bind(!has_access)
     .bind(&ip)
     .execute(pool.get_ref())
     .await?;
 
+    // Audit log
+    let _ = crate::services::auth_service::audit_log(
+        pool.get_ref(),
+        Some(user_id),
+        "media_token_issued",
+        "content",
+        Some(body.content_id),
+        &ip,
+        req.headers().get("User-Agent").and_then(|v| v.to_str().ok()).unwrap_or(""),
+        Some(serde_json::json!({ "is_full_access": has_access })),
+    ).await;
+
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "token": media_token,
-        "is_full_access": is_full_access,
+        "is_full_access": has_access,
         "expires_in_seconds": config.token_expiration_minutes * 60,
     })))
 }
 
 /// GET /stream/audio/{content_id}/master.m3u8
-/// Получение master-плейлиста для аудио (HLS)
 async fn stream_audio_master(
     pool: web::Data<PgPool>,
     config: web::Data<Config>,
@@ -92,29 +101,28 @@ async fn stream_audio_master(
 ) -> Result<HttpResponse, AppError> {
     let content_id = path.into_inner();
 
-    // Валидация токена из query params
     let token = req.match_info().query("token");
-    let media_claims = streaming_service::validate_media_token(token)?;
+    // FIX: Валидация с секретом из config
+    let media_claims = streaming_service::validate_media_token(token, &config.media_token_secret)?;
 
     if media_claims.content_id != content_id {
         return Err(AppError::ForbiddenError("Токен не соответствует контенту".to_string()));
     }
 
-    // Проверка Referer (защита от хотлинкинга)
+    // FIX: Валидация Referer
     let referer = req.headers().get("Referer")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !referer.contains(&config.cors_origin) && !referer.is_empty() {
+    if !referer.is_empty() && !config.is_origin_allowed(referer) {
         return Err(AppError::ForbiddenError("Недопустимый источник запроса".to_string()));
     }
 
-    // Генерация HLS master playlist
     let playlist = streaming_service::generate_audio_playlist(
         pool.get_ref(),
         content_id,
         media_claims.is_full_access,
-        &token,
+        token,
     ).await?;
 
     Ok(HttpResponse::Ok()
@@ -124,30 +132,33 @@ async fn stream_audio_master(
 }
 
 /// GET /stream/audio/{content_id}/{segment}
-/// Получение отдельного сегмента аудио (.ts)
 async fn stream_audio_segment(
     pool: web::Data<PgPool>,
+    redis: web::Data<redis::Client>,
     config: web::Data<Config>,
     path: web::Path<(Uuid, String)>,
     req: HttpRequest,
 ) -> Result<HttpResponse, AppError> {
     let (content_id, segment_name) = path.into_inner();
 
-    // Валидация токена
     let token = req.match_info().query("token");
-    let media_claims = streaming_service::validate_media_token(token)?;
+    let media_claims = streaming_service::validate_media_token(token, &config.media_token_secret)?;
 
     if media_claims.content_id != content_id {
         return Err(AppError::ForbiddenError("Токен не соответствует контенту".to_string()));
     }
 
-    // Rate limiting через Redis
+    // FIX: Реальный rate limiting через Redis
     let rate_key = format!("rate:{}:{}", media_claims.user_id, content_id);
-    streaming_service::check_rate_limit(pool.get_ref(), &rate_key).await?;
+    streaming_service::check_rate_limit(
+        redis.get_ref(),
+        &rate_key,
+        config.rate_limit_media,
+        60,
+    ).await?;
 
-    // Получение сегмента из S3
     let segment_data = streaming_service::get_segment_from_storage(
-        &config,
+        config.get_ref(),
         content_id,
         &segment_name,
     ).await?;
@@ -155,12 +166,10 @@ async fn stream_audio_segment(
     Ok(HttpResponse::Ok()
         .content_type("video/mp2t")
         .insert_header(("Cache-Control", "no-cache, no-store"))
-        .insert_header(("X-Content-Token", token))
         .body(segment_data))
 }
 
 /// GET /stream/video/{content_id}/master.m3u8
-/// Получение master-плейлиста для видео (HLS)
 async fn stream_video_master(
     pool: web::Data<PgPool>,
     config: web::Data<Config>,
@@ -170,27 +179,25 @@ async fn stream_video_master(
     let content_id = path.into_inner();
 
     let token = req.match_info().query("token");
-    let media_claims = streaming_service::validate_media_token(token)?;
+    let media_claims = streaming_service::validate_media_token(token, &config.media_token_secret)?;
 
     if media_claims.content_id != content_id {
         return Err(AppError::ForbiddenError("Токен не соответствует контенту".to_string()));
     }
 
-    // Проверка Referer
     let referer = req.headers().get("Referer")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !referer.contains(&config.cors_origin) && !referer.is_empty() {
+    if !referer.is_empty() && !config.is_origin_allowed(referer) {
         return Err(AppError::ForbiddenError("Недопустимый источник запроса".to_string()));
     }
 
-    // Генерация HLS video playlist с несколькими качествами
     let playlist = streaming_service::generate_video_playlist(
         pool.get_ref(),
         content_id,
         media_claims.is_full_access,
-        &token,
+        token,
     ).await?;
 
     Ok(HttpResponse::Ok()
@@ -200,9 +207,9 @@ async fn stream_video_master(
 }
 
 /// GET /stream/video/{content_id}/{segment}
-/// Получение сегмента видео
 async fn stream_video_segment(
     pool: web::Data<PgPool>,
+    redis: web::Data<redis::Client>,
     config: web::Data<Config>,
     path: web::Path<(Uuid, String)>,
     req: HttpRequest,
@@ -210,19 +217,23 @@ async fn stream_video_segment(
     let (content_id, segment_name) = path.into_inner();
 
     let token = req.match_info().query("token");
-    let media_claims = streaming_service::validate_media_token(token)?;
+    let media_claims = streaming_service::validate_media_token(token, &config.media_token_secret)?;
 
     if media_claims.content_id != content_id {
         return Err(AppError::ForbiddenError("Токен не соответствует контенту".to_string()));
     }
 
-    // Rate limiting
     let rate_key = format!("rate:{}:{}", media_claims.user_id, content_id);
-    streaming_service::check_rate_limit(pool.get_ref(), &rate_key).await?;
+    streaming_service::check_rate_limit(
+        redis.get_ref(),
+        &rate_key,
+        config.rate_limit_media,
+        60,
+    ).await?;
 
-    // Получение сегмента с водяным знаком
+    // FIX: Реальные водяные знаки через FFmpeg
     let segment_data = streaming_service::get_video_segment_with_watermark(
-        &config,
+        config.get_ref(),
         pool.get_ref(),
         content_id,
         &segment_name,
@@ -236,7 +247,6 @@ async fn stream_video_segment(
 }
 
 /// GET /stream/teaser/{content_id}
-/// Получение тизера (публичный доступ, без токена)
 async fn get_teaser(
     pool: web::Data<PgPool>,
     config: web::Data<Config>,
@@ -244,7 +254,6 @@ async fn get_teaser(
 ) -> Result<HttpResponse, AppError> {
     let content_id = path.into_inner();
 
-    // Получение URL тизера из БД
     let teaser_url: String = sqlx::query_scalar(
         "SELECT teaser_url FROM contents WHERE id = $1 AND status = 'published'"
     )
@@ -257,9 +266,8 @@ async fn get_teaser(
         return Err(AppError::NotFound("Тизер не найден".to_string()));
     }
 
-    // Получение файла тизера из S3
     let teaser_data = streaming_service::get_segment_from_storage(
-        &config,
+        config.get_ref(),
         content_id,
         &teaser_url,
     ).await?;

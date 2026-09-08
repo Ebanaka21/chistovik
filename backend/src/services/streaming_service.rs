@@ -1,5 +1,8 @@
 use chrono::{Utc, Duration};
 use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
+use s3::bucket::Bucket;
+use s3::creds::Credentials;
+use s3::region::Region;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -14,6 +17,7 @@ pub struct MediaTokenClaims {
     pub is_full_access: bool,
     pub exp: i64,
     pub iat: i64,
+    pub jti: String, // Уникальный ID для аудита
 }
 
 /// Проверка доступа пользователя к контенту
@@ -51,12 +55,13 @@ pub async fn check_content_access(
     Ok(has_access)
 }
 
-/// Генерация медиа-токена для доступа к сегментам
+/// FIX: Генерация медиа-токена с секретом из env (не хардкод!)
 pub fn generate_media_token(
     user_id: Uuid,
     content_id: Uuid,
     is_full_access: bool,
     expiration_minutes: u32,
+    secret: &str, // FIX: передаётся из config
 ) -> Result<String, AppError> {
     let now = Utc::now();
     let exp = now + Duration::minutes(expiration_minutes as i64);
@@ -67,10 +72,8 @@ pub fn generate_media_token(
         is_full_access,
         exp: exp.timestamp(),
         iat: now.timestamp(),
+        jti: Uuid::new_v4().to_string(),
     };
-
-    // Используем отдельный секрет для медиа-токенов
-    let secret = "chistovik_media_token_secret_key_2026";
 
     let token = encode(
         &Header::default(),
@@ -81,32 +84,159 @@ pub fn generate_media_token(
     Ok(token)
 }
 
-/// Валидация медиа-токена
-pub fn validate_media_token(token: &str) -> Result<MediaTokenClaims, AppError> {
-    let secret = "chistovik_media_token_secret_key_2026";
+/// FIX: Валидация медиа-токена с секретом из env
+pub fn validate_media_token(token: &str, secret: &str) -> Result<MediaTokenClaims, AppError> {
+    let mut validation = Validation::default();
+    validation.validate_exp = true;
 
     let token_data = decode::<MediaTokenClaims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
-        &Validation::default(),
+        &validation,
     ).map_err(|_| AppError::AuthError("Невалидный медиа-токен".to_string()))?;
 
     Ok(token_data.claims)
 }
 
-/// Проверка rate limit через Redis
+/// FIX: Реальный rate limiting через Redis
 pub async fn check_rate_limit(
-    pool: &PgPool,
+    redis: &redis::Client,
     rate_key: &str,
+    max_requests: u32,
+    window_seconds: u64,
 ) -> Result<(), AppError> {
-    // В реальном коде — проверка через Redis:
-    // let redis = redis_client.get_async_connection().await?;
-    // let current: u32 = redis::cmd("INCR").arg(&rate_key).query_async(&mut redis).await?;
-    // if current == 1 { redis::cmd("EXPIRE").arg(&rate_key).arg(60).query_async(&mut redis).await?; }
-    // if current > 30 { return Err(AppError::RateLimitExceeded); }
+    let mut conn = redis.get_multiplexed_async_connection()
+        .await
+        .map_err(|e| AppError::InternalError(format!("Redis connection error: {}", e)))?;
 
-    // Заглушка — всегда разрешаем
+    // INCR + EXPIRE атомарно через Lua script
+    let script = redis::Script::new(r#"
+        local current = redis.call('INCR', KEYS[1])
+        if current == 1 then
+            redis.call('EXPIRE', KEYS[1], ARGV[1])
+        end
+        return current
+    "#);
+
+    let current: u32 = script
+        .key(rate_key)
+        .arg(window_seconds)
+        .invoke_async(&mut conn)
+        .await
+        .map_err(|e| AppError::InternalError(format!("Redis error: {}", e)))?;
+
+    if current > max_requests {
+        return Err(AppError::RateLimitExceeded);
+    }
+
     Ok(())
+}
+
+/// FIX: Реальное получение сегмента из S3
+pub async fn get_segment_from_storage(
+    config: &Config,
+    content_id: Uuid,
+    segment_path: &str,
+) -> Result<Vec<u8>, AppError> {
+    let region = Region::Custom {
+        endpoint: config.s3_endpoint.clone(),
+        region: config.s3_region.clone(),
+    };
+
+    let credentials = Credentials::new(
+        Some(&config.s3_access_key),
+        Some(&config.s3_secret_key),
+        None,
+        None,
+        None,
+    ).map_err(|e| AppError::StorageError(format!("S3 credentials error: {}", e)))?;
+
+    let bucket = Bucket::new(
+        &config.s3_bucket,
+        region,
+        credentials,
+    ).map_err(|e| AppError::StorageError(format!("S3 bucket error: {}", e)))?;
+
+    let object_key = format!("content/{}/{}", content_id, segment_path);
+
+    let response = bucket.get_object(&object_key)
+        .await
+        .map_err(|e| AppError::StorageError(format!("S3 get error: {}", e)))?;
+
+    if response.response_code() != 200 {
+        return Err(AppError::StorageError(format!(
+            "S3 returned status {}", response.response_code()
+        )));
+    }
+
+    Ok(response.to_vec())
+}
+
+/// FIX: Реальное наложение водяных знаков через FFmpeg
+pub async fn get_video_segment_with_watermark(
+    config: &Config,
+    pool: &PgPool,
+    content_id: Uuid,
+    segment_name: &str,
+    user_id: Uuid,
+) -> Result<Vec<u8>, AppError> {
+    // Получение имени пользователя для водяного знака
+    let display_name: String = sqlx::query_scalar(
+        "SELECT display_name FROM users WHERE id = $1"
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or_else(|| format!("user_{}", &user_id.to_string()[..8]));
+
+    // Получение оригинального сегмента из S3
+    let original_segment = get_segment_from_storage(config, content_id, segment_name).await?;
+
+    // Создание временных файлов
+    let temp_dir = std::env::temp_dir();
+    let input_path = temp_dir.join(format!("input_{}.ts", Uuid::new_v4()));
+    let output_path = temp_dir.join(format!("output_{}.ts", Uuid::new_v4()));
+
+    // Запись оригинального сегмента
+    tokio::fs::write(&input_path, &original_segment)
+        .await
+        .map_err(|e| AppError::InternalError(format!("Failed to write temp file: {}", e)))?;
+
+    // Наложение водяного знака через FFmpeg
+    let watermark_text = format!("{} · {}", display_name, &user_id.to_string()[..8]);
+    let output = tokio::process::Command::new(&config.ffmpeg_path)
+        .args(&[
+            "-i", input_path.to_str().unwrap(),
+            "-vf", &format!(
+                "drawtext=text='{}':fontsize=18:fontcolor=white@0.4:x=10:y=10:borderw=1:bordercolor=black@0.3",
+                watermark_text
+            ),
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-c:a", "copy",
+            "-f", "mpegts",
+            output_path.to_str().unwrap(),
+            "-y",
+        ])
+        .output()
+        .await
+        .map_err(|e| AppError::InternalError(format!("FFmpeg error: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::InternalError(format!("FFmpeg failed: {}", stderr)));
+    }
+
+    // Чтение результата
+    let watermarked_segment = tokio::fs::read(&output_path)
+        .await
+        .map_err(|e| AppError::InternalError(format!("Failed to read output: {}", e)))?;
+
+    // Очистка временных файлов
+    let _ = tokio::fs::remove_file(input_path).await;
+    let _ = tokio::fs::remove_file(output_path).await;
+
+    Ok(watermarked_segment)
 }
 
 /// Генерация HLS master playlist для аудио
@@ -116,7 +246,7 @@ pub async fn generate_audio_playlist(
     is_full_access: bool,
     token: &str,
 ) -> Result<String, AppError> {
-    let file_url: String = sqlx::query_scalar(
+    let _file_url: String = sqlx::query_scalar(
         "SELECT file_url FROM contents WHERE id = $1"
     )
     .bind(content_id)
@@ -157,7 +287,7 @@ pub async fn generate_audio_playlist(
 
 /// Генерация HLS master playlist для видео (адаптивный стриминг)
 pub async fn generate_video_playlist(
-    pool: &PgPool,
+    _pool: &PgPool,
     content_id: Uuid,
     is_full_access: bool,
     token: &str,
@@ -188,54 +318,4 @@ pub async fn generate_video_playlist(
     };
 
     Ok(playlist)
-}
-
-/// Получение сегмента из S3-хранилища
-pub async fn get_segment_from_storage(
-    config: &Config,
-    content_id: Uuid,
-    segment_path: &str,
-) -> Result<Vec<u8>, AppError> {
-    // В реальном коде — запрос к S3 через rust-s3:
-    // let bucket = Bucket::new(
-    //     &config.s3_bucket,
-    //     Region::Custom { endpoint: config.s3_endpoint.clone(), region: config.s3_region.clone() },
-    //     Credentials::new(&config.s3_access_key, &config.s3_secret_key, None, None, None)?,
-    // )?;
-    // let (data, code) = bucket.get_object(segment_path).await?;
-
-    // Заглушка
-    Ok(Vec::new())
-}
-
-/// Получение видео-сегмента с наложением водяного знака
-pub async fn get_video_segment_with_watermark(
-    config: &Config,
-    pool: &PgPool,
-    content_id: Uuid,
-    segment_name: &str,
-    user_id: Uuid,
-) -> Result<Vec<u8>, AppError> {
-    // Получение имени пользователя для водяного знака
-    let display_name: String = sqlx::query_scalar(
-        "SELECT display_name FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or_else(|| format!("user_{}", &user_id.to_string()[..8]));
-
-    // В реальном коде:
-    // 1. Получение сегмента из S3
-    // 2. Наложение водяного знака через FFmpeg:
-    //    ffmpeg -i segment.ts -vf "drawtext=text='{display_name}':fontsize=24:fontcolor=white@0.3:x=10:y=10" -c copy output.ts
-    // 3. Возврат модифицированного сегмента
-
-    let _watermark_command = format!(
-        "ffmpeg -i segment.ts -vf \"drawtext=text='{}':fontsize=24:fontcolor=white@0.3:x=10:y=10\" -c copy output.ts",
-        display_name
-    );
-
-    // Заглушка — возвращаем оригинальный сегмент
-    get_segment_from_storage(config, content_id, segment_name).await
 }
