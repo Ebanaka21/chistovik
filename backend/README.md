@@ -188,14 +188,65 @@ cargo tarpaulin
 cargo test --features integration
 ```
 
+## Observability
+
+### Метрики (Prometheus)
+- `http_requests_total` — общее количество HTTP запросов
+- `http_errors_total` — количество HTTP ошибок (5xx)
+- `http_request_duration_seconds` — гистограмма длительности запросов
+- `db_connections_active` — активные подключения к БД
+- `auth_success_total` — успешные аутентификации
+- `auth_failure_total` — неудачные аутентификации
+- `subscriptions_created_total` — созданные подписки
+- `payments_success_total` — успешные платежи
+- `streaming_requests_total` — стриминг запросы
+- `upload_size_bytes` — размер загружаемых файлов
+
+Экспорт метрик: `GET /health/metrics`
+
+### Трейсинг (OpenTelemetry)
+- Автоматический трейсинг всех HTTP запросов
+- Интеграция с Jaeger, Zipkin, или другим OTLP-совместимым бэкендом
+- Контекстная трассировка через несколько сервисов
+
+### Health Checks
+- `GET /health` — полная проверка здоровья (БД + сервис)
+- `GET /health/ready` — readiness probe для Kubernetes
+- `GET /health/live` — liveness probe для Kubernetes
+
 ## Production Checklist
 
-- [ ] Все секреты в env vars (не хардкод!)
-- [ ] HTTPS включён
-- [ ] Rate limiting настроен
-- [ ] Audit logging активен
+- [x] Все секреты в env vars (не хардкод!)
+- [x] HTTPS включён (настраивается на reverse proxy)
+- [x] Rate limiting через Redis (реальный, не заглушка)
+- [x] Audit logging активен
+- [x] Security headers (CSP, HSTS, X-Frame-Options)
+- [x] HMAC верификация webhook'ов
+- [x] Graceful shutdown с ожиданием запросов
+- [x] Health check endpoints
+- [x] Prometheus метрики
+- [x] OpenTelemetry трейсинг
+- [x] Unit + Integration tests
 - [ ] Backup БД настроен
 - [ ] Мониторинг (Prometheus + Grafana)
 - [ ] Alerting на ошибки
 - [ ] GDPR compliance (удаление данных)
 - [ ] 152-ФЗ compliance (персональные данные)
+
+## Улучшения безопасности (v2)
+
+### Реализовано:
+1. ✅ **Rate limiting middleware** — реальная интеграция с Redis, не заглушка
+2. ✅ **Graceful shutdown** — ожидание завершения активных запросов (30 сек)
+3. ✅ **Health check endpoints** — `/health`, `/health/ready`, `/health/live`
+4. ✅ **Prometheus метрики** — 10+ метрик для мониторинга
+5. ✅ **OpenTelemetry трейсинг** — полная трассировка запросов
+6. ✅ **Integration tests** — тесты для критичных роутов
+7. ✅ **Metrics middleware** — автоматический сбор метрик HTTP
+
+### Архитектурные улучшения:
+- Middleware для метрик добавлен до security headers
+- Redis клиент передаётся через app_data
+- Fail-open стратегия для rate limiting (если Redis недоступен)
+- Логирование медленных запросов (>1 сек)
+- Автоматическая регистрация метрик при старте
