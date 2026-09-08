@@ -233,7 +233,7 @@ cargo test --features integration
 - [ ] GDPR compliance (удаление данных)
 - [ ] 152-ФЗ compliance (персональные данные)
 
-## Улучшения безопасности (v2)
+## Улучшения безопасности (v2 → v3)
 
 ### Реализовано:
 1. ✅ **Rate limiting middleware** — реальная интеграция с Redis, не заглушка
@@ -244,9 +244,35 @@ cargo test --features integration
 6. ✅ **Integration tests** — тесты для критичных роутов
 7. ✅ **Metrics middleware** — автоматический сбор метрик HTTP
 
+### Критические исправления (v3):
+1. ✅ **Auth middleware** — claims теперь вставляются в extensions ДО вызова service
+2. ✅ **Порядок middleware** — RateLimiter внутри AuthMiddleware для ключевания по user_id
+3. ✅ **Fail-closed для auth** — auth endpoints возвращают 503 при ошибке Redis (не пропускают)
+4. ✅ **X-Forwarded-For** — извлечение реального IP клиента с проверкой доверенных прокси
+5. ✅ **Персональные лимиты** — rate limit по user_id для авторизованных пользователей
+
 ### Архитектурные улучшения:
 - Middleware для метрик добавлен до security headers
 - Redis клиент передаётся через app_data
-- Fail-open стратегия для rate limiting (если Redis недоступен)
+- Fail-open стратегия для media/api (доступность важнее)
+- **Fail-closed стратегия для auth** (безопасность важнее)
 - Логирование медленных запросов (>1 сек)
 - Автоматическая регистрация метрик при старте
+- Извлечение IP из X-Forwarded-For с проверкой доверенных прокси
+- Персональные rate limits по user_id (не только по IP)
+
+### Конфигурация:
+```bash
+# Доверенные прокси (для X-Forwarded-For)
+TRUSTED_PROXIES=127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+```
+
+### Порядок middleware (важно!):
+```rust
+// Для защищённых роутов:
+// Auth → RateLimiter → handlers
+// RateLimiter внутри Auth для доступа к claims
+web::scope("/api/v1")
+    .wrap(RateLimiter)  // Внутри
+    .wrap(AuthMiddleware)  // Снаружи
+```

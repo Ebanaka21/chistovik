@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::config::Config;
 use crate::errors::AppError;
+use crate::middleware::rate_limit;
 
 /// Claims для медиа-токена
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -99,6 +100,7 @@ pub fn validate_media_token(token: &str, secret: &str) -> Result<MediaTokenClaim
 }
 
 /// FIX: Реальный rate limiting через Redis
+/// Использует общую функцию из middleware/rate_limit.rs
 pub async fn check_rate_limit(
     redis: &redis::Client,
     rate_key: &str,

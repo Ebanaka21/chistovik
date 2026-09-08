@@ -1,5 +1,9 @@
-use actix_web::{dev::{ServiceRequest, ServiceResponse, Transform, Service}, Error, HttpMessage, HttpResponse};
-use futures::future::{ok, Ready, LocalBoxFuture};
+use actix_web::{
+    dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
+    Error, HttpMessage, HttpResponse,
+};
+use futures::future::{ok, LocalBoxFuture, Ready};
+use std::rc::Rc;
 use std::task::{Context, Poll};
 
 use crate::config::Config;
@@ -22,12 +26,14 @@ where
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ok(AuthMiddlewareService { service })
+        ok(AuthMiddlewareService {
+            service: Rc::new(service),
+        })
     }
 }
 
 pub struct AuthMiddlewareService<S> {
-    service: S,
+    service: Rc<S>,
 }
 
 impl<S, B> Service<ServiceRequest> for AuthMiddlewareService<S>
@@ -39,59 +45,59 @@ where
     type Error = Error;
     type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.service.poll_ready(cx)
-    }
+    forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        // Извлечение токена из Authorization header
-        let auth_header = req.headers()
-            .get("Authorization")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-
-        let config = req.app_data::<actix_web::web::Data<Config>>()
-            .map(|c| c.get_ref().clone());
-
-        let fut = self.service.call(req);
+        let service = self.service.clone();
 
         Box::pin(async move {
-            // Если нет config, пропускаем (не должно происходить)
+            // Извлечение токена из Authorization header
+            let auth_header = req
+                .headers()
+                .get("Authorization")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+
+            // Получение config из app_data
+            let config = req
+                .app_data::<actix_web::web::Data<Config>>()
+                .map(|c| c.get_ref().clone());
+
             let config = match config {
                 Some(c) => c,
                 None => {
-                    let res = HttpResponse::InternalServerError().finish().map_into_right_body();
-                    return Ok(ServiceResponse::new(
-                        fut.await?.request().clone(),
-                        res.map_into_left_body(),
+                    return Err(actix_web::error::ErrorInternalServerError(
+                        "Config not found",
                     ));
                 }
             };
 
-            match auth_header {
+            // Валидация токена
+            let claims = match auth_header {
                 Some(header) if header.starts_with("Bearer ") => {
                     let token = &header[7..];
                     match auth_service::validate_token(token, &config.jwt_secret) {
-                        Ok(claims) => {
-                            // Токен валиден — продолжаем
-                            let res = fut.await?;
-                            Ok(res)
-                        }
+                        Ok(claims) => claims,
                         Err(_) => {
-                            let res = HttpResponse::Unauthorized()
-                                .json(serde_json::json!({
-                                    "error": "unauthorized",
-                                    "message": "Невалидный или истёкший токен"
-                                }));
-                            // Возвращаем ошибку
-                            Err(actix_web::error::ErrorUnauthorized("Invalid token"))
+                            return Err(actix_web::error::ErrorUnauthorized(
+                                "Invalid or expired token",
+                            ));
                         }
                     }
                 }
                 _ => {
-                    Err(actix_web::error::ErrorUnauthorized("Missing authorization header"))
+                    return Err(actix_web::error::ErrorUnauthorized(
+                        "Missing authorization header",
+                    ));
                 }
-            }
+            };
+
+            // FIX: Вставляем claims в request extensions ДО вызова service
+            req.extensions_mut().insert(claims);
+
+            // Теперь вызываем следующий сервис с claims в extensions
+            let res = service.call(req).await?;
+            Ok(res)
         })
     }
 }
