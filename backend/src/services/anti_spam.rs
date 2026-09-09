@@ -97,6 +97,11 @@ impl AntiSpamService {
         // Логируем проверку
         self.log_check(user_id, content, content_type, score, is_spam).await?;
 
+        // Логируем в audit_logs для отслеживания
+        if score >= 0.4 {
+            self.log_to_audit(user_id, content_type, score, &reasons).await?;
+        }
+
         Ok(SpamCheckResult {
             is_spam,
             score,
@@ -160,6 +165,29 @@ impl AntiSpamService {
         .bind(self.hash_content(content))
         .bind(score)
         .bind(is_spam)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| SpamError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Логирование в audit_logs для отслеживания подозрительной активности
+    async fn log_to_audit(&self, user_id: Uuid, content_type: &str, score: f64, reasons: &[String]) -> Result<(), SpamError> {
+        sqlx::query(
+            r#"
+            INSERT INTO audit_logs (id, user_id, action, resource_type, resource_id, ip_address, user_agent, metadata, created_at)
+            VALUES ($1, $2, $3, $4, NULL, '', '', $5, NOW())
+            "#
+        )
+        .bind(Uuid::new_v4())
+        .bind(user_id)
+        .bind("spam_check")
+        .bind(content_type)
+        .bind(serde_json::json!({
+            "score": score,
+            "reasons": reasons
+        }))
         .execute(&self.pool)
         .await
         .map_err(|e| SpamError::Database(e.to_string()))?;

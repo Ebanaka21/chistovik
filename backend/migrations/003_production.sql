@@ -1,5 +1,25 @@
 -- Production-ready миграции для Чистовик
 
+-- Jobs table (очередь задач для FFmpeg)
+CREATE TYPE job_status AS ENUM ('pending', 'processing', 'completed', 'failed', 'dead_letter');
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id UUID PRIMARY KEY,
+    job_type JSONB NOT NULL,
+    status job_status NOT NULL DEFAULT 'pending',
+    priority INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 3,
+    error TEXT,
+    result JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status_priority ON jobs(status, priority, created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_dead_letter ON jobs(status) WHERE status = 'dead_letter';
+
 -- Idempotency keys (защита от дублей)
 CREATE TABLE IF NOT EXISTS idempotency_keys (
     id UUID PRIMARY KEY,

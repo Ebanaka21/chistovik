@@ -84,6 +84,18 @@ async fn main() -> std::io::Result<()> {
         system_monitor.run().await;
     });
 
+    // Job queue для FFmpeg задач
+    let job_queue = services::job_queue::JobQueue::new(pool.clone(), 4); // Максимум 4 параллельных FFmpeg
+    let (job_shutdown_tx, job_shutdown_rx) = tokio::sync::mpsc::channel(1);
+    
+    // Запуск job worker в отдельной задаче
+    let mut job_worker = services::job_queue::JobWorker::new(job_queue, job_shutdown_rx);
+    tokio::spawn(async move {
+        if let Err(e) = job_worker.run().await {
+            log::error!("Job worker error: {}", e);
+        }
+    });
+
     // FIX: Graceful shutdown через tokio signal с ожиданием завершения запросов
     let server = HttpServer::new(move || {
         let cors = Cors::default()
@@ -156,6 +168,9 @@ async fn main() -> std::io::Result<()> {
             
             // Сигнализируем system monitor о shutdown
             let _ = shutdown_tx.send(true);
+            
+            // Сигнализируем job worker о shutdown
+            let _ = job_shutdown_tx.send(()).await;
             
             log::info!("Waiting for active requests to complete (max 30s)...");
             

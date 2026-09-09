@@ -149,6 +149,37 @@ impl BackupService {
         Ok(())
     }
 
+    /// Проверка целостности бэкапа (restore drill)
+    /// Запускается периодически для проверки что бэкапы рабочие
+    pub async fn verify_backup(&self, backup_path: &str) -> Result<bool, BackupError> {
+        // Проверяем что файл существует
+        if !std::path::Path::new(backup_path).exists() {
+            return Err(BackupError::Io("Backup file not found".to_string()));
+        }
+
+        // Проверяем целостность через pg_restore --list
+        let output = Command::new("pg_restore")
+            .args(&["--list", backup_path])
+            .output()
+            .map_err(|e| BackupError::Command(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::error!("Backup verification failed: {}", stderr);
+            return Ok(false);
+        }
+
+        // Проверяем что есть данные в списке
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.lines().count() < 5 {
+            log::warn!("Backup seems empty or corrupted");
+            return Ok(false);
+        }
+
+        log::info!("Backup verification successful: {}", backup_path);
+        Ok(true)
+    }
+
     // Helper методы для парсинга DATABASE_URL
     fn extract_host(&self) -> String {
         self.db_url.split("://").nth(1)
