@@ -98,18 +98,29 @@ impl ChunkedUploadService {
         let mut file = tokio::fs::File::create(&chunk_path).await?;
         let mut bytes_written: u64 = 0;
 
-        while let Some(chunk) = payload.next().await {
-            let chunk = chunk?;
-            bytes_written += chunk.len() as u64;
+        // Используем блок для обработки ошибок и очистки
+        let write_result = async {
+            while let Some(chunk) = payload.next().await {
+                let chunk = chunk?;
+                bytes_written += chunk.len() as u64;
 
-            if bytes_written > self.chunk_size as u64 * 2 {
-                return Err("Chunk too large".into());
+                // Проверка суммарного размера ДО записи каждого чанка
+                if bytes_written > self.chunk_size as u64 * 2 {
+                    return Err("Chunk too large".into());
+                }
+
+                file.write_all(&chunk).await?;
             }
 
-            file.write_all(&chunk).await?;
-        }
+            file.flush().await?;
+            Ok::<_, Box<dyn std::error::Error>>(())
+        }.await;
 
-        file.flush().await?;
+        // Удаление temp-файла при ошибке
+        if let Err(e) = write_result {
+            let _ = tokio::fs::remove_file(&chunk_path).await;
+            return Err(e);
+        }
 
         // Обновляем прогресс
         sqlx::query(
