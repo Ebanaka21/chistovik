@@ -10,3 +10,4 @@ pub mod quota;
 pub mod anti_spam;
 pub mod backup;
 pub mod anomaly_detection;
+pub mod idempotency_service;
