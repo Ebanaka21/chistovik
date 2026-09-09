@@ -2,6 +2,7 @@ use actix_web::{web, App, HttpServer, middleware};
 use actix_cors::Cors;
 use sqlx::postgres::PgPoolOptions;
 use std::env;
+use std::sync::Arc;
 use dotenv::dotenv;
 
 mod config;
@@ -13,6 +14,7 @@ mod errors;
 mod telemetry;
 
 use config::Config;
+use app_middleware::graceful_degradation::{SystemMonitor, DegradationConfig, ConnectionCounter};
 
 #[cfg(test)]
 mod tests;
@@ -71,6 +73,17 @@ async fn main() -> std::io::Result<()> {
     let pool_data = web::Data::new(pool.clone());
     let redis_data = web::Data::new(redis_client);
 
+    // System monitor для graceful degradation
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let degradation_config = DegradationConfig::default();
+    let mut system_monitor = SystemMonitor::new(degradation_config.clone(), shutdown_rx);
+    let system_status = system_monitor.get_status();
+
+    // Запуск system monitor в отдельной задаче
+    tokio::spawn(async move {
+        system_monitor.run().await;
+    });
+
     // FIX: Graceful shutdown через tokio signal с ожиданием завершения запросов
     let server = HttpServer::new(move || {
         let cors = Cors::default()
@@ -83,6 +96,13 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .wrap(middleware::Logger::default())
             .wrap(middleware::Compress::default())
+            // FIX: Connection counter (должен быть снаружи для подсчёта всех подключений)
+            .wrap(ConnectionCounter)
+            // FIX: Graceful degradation middleware
+            .wrap(app_middleware::graceful_degradation::GracefulDegradationMiddleware::new(
+                system_status.clone(),
+                DegradationConfig::default(),
+            ))
             // FIX: Metrics middleware (должен быть до security для корректного подсчёта)
             .wrap(telemetry::middleware::MetricsMiddleware)
             // FIX: Security headers middleware
@@ -133,6 +153,10 @@ async fn main() -> std::io::Result<()> {
         }
         _ = tokio::signal::ctrl_c() => {
             log::info!("Received Ctrl+C, initiating graceful shutdown...");
+            
+            // Сигнализируем system monitor о shutdown
+            let _ = shutdown_tx.send(true);
+            
             log::info!("Waiting for active requests to complete (max 30s)...");
             
             // Даём время завершиться активным запросам
